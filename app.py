@@ -2,9 +2,12 @@ from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 import os
 import logging
-from aws_xray_sdk.core import xray_recorder
-from aws_xray_sdk.ext.flask.middleware import XRayMiddleware
-from aws_xray_sdk.ext.flask_sqlalchemy.query import XRayFlaskSqlAlchemy
+from opentelemetry import trace
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from awsxray.ext.opentelemetry_utils import initialize_from_env
 import requests
 
 LOGFILE_NAME = "/var/log/app.log"
@@ -21,26 +24,25 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 fh.setFormatter(formatter)
 app.logger.addHandler(fh)
 
+# OpenTelemetry Traceプロバイダーを初期化
+provider = TracerProvider()
+processor = BatchSpanProcessor()
+provider.add_span_processor(processor)
+trace.set_tracer_provider(provider)
+
+# AWS X-Rayエクスポーターを初期化
+initialize_from_env()
+
+# Flaskインストルメンテーションを有効化
+FlaskInstrumentor().instrument_app(app)
+
+# SQLAlchemyインストルメンテーションを有効化
+SQLAlchemyInstrumentor().instrument(engine=db.engine)
+
 # Database設定
 app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://Admin:password@{dburl}/taskdb"
 # db = SQLAlchemy(app)
-db=XRayFlaskSqlAlchemy(app)
-
-# X-Ray設定
-plugins = ('EC2Plugin',)
-xray_recorder.configure(plugins=plugins)
-xray_recorder.configure(service='chaos_kitty_demo_app')
-
-# HTTPリクエストに利用するモジュールを指定
-# libraries = (['requests','])
-# patch(libraries)
-
-# X-Rayサンプリングルールの設定
-sampling_rule_path = os.getcwd() + "/" + "sampling_rule.json"
-xray_recorder.configure(sampling_rules=sampling_rule_path)
-
-# FlaskとX-Rayを連携
-XRayMiddleware(app, xray_recorder)
+db=SQLAlchemy(app)
 
 class Todo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
