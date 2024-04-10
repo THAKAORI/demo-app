@@ -1,7 +1,7 @@
 flask
 waitress
 pymysql
-flask_sqlalchemy
+flask_sqlalchemy==2.5.1
 aws-xray-sdk
 requests
 SQLAlchemy
