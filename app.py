@@ -2,15 +2,9 @@ from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 import os
 import logging
-from opentelemetry import trace
-from opentelemetry.instrumentation.flask import FlaskInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace.export import (
-    ConsoleSpanExporter,
-    SimpleSpanProcessor,
-)
-from opentelemetry.sdk.trace import TracerProvider
+from aws_xray_sdk.core import xray_recorder
+from aws_xray_sdk.ext.flask.middleware import XRayMiddleware
+from aws_xray_sdk.ext.flask_sqlalchemy.query import XRayFlaskSqlAlchemy
 import requests
 
 LOGFILE_NAME = "/var/log/app.log"
@@ -30,21 +24,23 @@ app.logger.addHandler(fh)
 # Database設定
 app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://Admin:password@{dburl}/taskdb"
 # db = SQLAlchemy(app)
-db=SQLAlchemy(app)
+db=XRayFlaskSqlAlchemy(app)
 
-# Otel設定
-resource = Resource(attributes={
-    "service.name": "chaos_kitty_demo_app",
-})
-trace.set_tracer_provider(TracerProvider(resource=resource))
-tracer = trace.get_tracer(__name__)
-FlaskInstrumentor().instrument_app(app)
-SQLAlchemyInstrumentor().instrument(
-    engine=db.engine,
-    metadata=db.metadata,
-)
-span_processor = SimpleSpanProcessor(ConsoleSpanExporter())
-trace.get_tracer_provider().add_span_processor(span_processor)
+# X-Ray設定
+plugins = ('EC2Plugin',)
+xray_recorder.configure(plugins=plugins)
+xray_recorder.configure(service='chaos_kitty_demo_app')
+
+# HTTPリクエストに利用するモジュールを指定
+# libraries = (['requests','])
+# patch(libraries)
+
+# X-Rayサンプリングルールの設定
+sampling_rule_path = os.getcwd() + "/" + "sampling_rule.json"
+xray_recorder.configure(sampling_rules=sampling_rule_path)
+
+# FlaskとX-Rayを連携
+XRayMiddleware(app, xray_recorder)
 
 class Todo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
