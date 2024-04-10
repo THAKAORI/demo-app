@@ -1,0 +1,7 @@
+flask
+waitress
+pymysql
+flask_sqlalchemy
+opentelemetry
+requests
+SQLAlchemy
